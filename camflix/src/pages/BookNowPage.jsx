@@ -1,109 +1,136 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../firebaseConfig";
 
 export default function BookNowPage() {
-  const [city, setCity] = useState("");
-  const [searchCity, setSearchCity] = useState("");
+  const [city, setCity] = useState(localStorage.getItem("currentCity") || "");
+  const [cities, setCities] = useState([]);
   const [theaters, setTheaters] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const GOOGLE_API_KEY = "AIzaSyC54KPH6Urr_UdwXJIQZ21T5APXK1mAqC0"; // Replace with your key
-
-  // Fetch user's city using Geolocation
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(async (position) => {
-        const { latitude, longitude } = position.coords;
-        try {
-          const res = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_API_KEY}`
-          );
-          const data = await res.json();
-          const addressComponents = data.results[0].address_components;
-          const userCityObj = addressComponents.find((c) =>
-            c.types.includes("locality")
-          );
-          const userCity = userCityObj ? userCityObj.long_name : "";
-          setCity(userCity);
-          setSearchCity(userCity);
-        } catch (err) {
-          console.error("Error getting city:", err);
-        }
-      });
+  // 🧠 Fetch all available cities (for dropdown)
+  const fetchAllCities = useCallback(async () => {
+    try {
+      const citiesRef = collection(db, "cities");
+      const snapshot = await getDocs(citiesRef);
+      const cityList = snapshot.docs.map((doc) => doc.data().city);
+      setCities(cityList);
+    } catch (err) {
+      console.error("Error fetching cities:", err);
+      setError("Failed to load cities.");
     }
   }, []);
 
-  // Fetch theaters from Google Places API
-  useEffect(() => {
-    if (!searchCity) return;
+  // 🎥 Fetch theaters by city name
+  const fetchTheaters = useCallback(async (cityInput) => {
+    if (!cityInput.trim()) {
+      setError("Please select a city.");
+      setTheaters([]);
+      return;
+    }
 
-    const fetchTheaters = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(
-          `https://maps.googleapis.com/maps/api/place/textsearch/json?query=movie+theaters+in+${searchCity}&key=${GOOGLE_API_KEY}`
-        );
-        const data = await res.json();
-        const theatersData = data.results.map((t) => ({
-          id: t.place_id,
-          name: t.name,
-          address: t.formatted_address,
-        }));
-        setTheaters(theatersData);
-      } catch (err) {
-        console.error("Error fetching theaters:", err);
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    setError("");
+    setTheaters([]);
+
+    try {
+      const citiesRef = collection(db, "cities");
+      const snapshot = await getDocs(citiesRef);
+      const matchedCity = snapshot.docs.find(
+        (doc) => doc.data().city.toLowerCase() === cityInput.trim().toLowerCase()
+      );
+
+      if (!matchedCity) {
+        setError("No theaters found for this city.");
+      } else {
+        const data = matchedCity.data();
+        setTheaters(data.theaters || []);
       }
-    };
+    } catch (err) {
+      console.error("Error fetching theaters:", err);
+      setError("Something went wrong. Try again later.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    fetchTheaters();
-  }, [searchCity]);
+  // 🔁 When city changes (via dropdown or localStorage), fetch theaters
+  useEffect(() => {
+    if (city) {
+      fetchTheaters(city);
+    }
+  }, [city, fetchTheaters]);
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setSearchCity(city);
+  // 📦 Load cities once on mount
+  useEffect(() => {
+    fetchAllCities();
+  }, [fetchAllCities]);
+
+  // 🏙 Handle dropdown change
+  const handleCityChange = (e) => {
+    const selectedCity = e.target.value;
+    setCity(selectedCity);
+    localStorage.setItem("currentCity", selectedCity);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-r from-gray-900 via-black to-gray-900 text-white px-6 py-6">
-      <h1 className="text-3xl font-bold mb-6">Book Your Tickets 🎟️</h1>
+    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-red-900 text-white py-10 px-4">
+      <div className="max-w-5xl mx-auto">
+        <h1 className="text-4xl font-bold text-center text-red-500 mb-8">
+          🎬 Book Movie Tickets
+        </h1>
 
-      <form className="mb-6 flex flex-col md:flex-row gap-3" onSubmit={handleSearch}>
-        <input
-          type="text"
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-          placeholder="Enter city..."
-          className="px-4 py-2 rounded-md border border-red-500 bg-black text-white w-full md:w-1/3 focus:outline-none focus:ring-2 focus:ring-red-500"
-        />
-        <button
-          type="submit"
-          className="bg-red-600 px-4 py-2 rounded-md hover:bg-red-700 transition font-semibold"
-        >
-          Search
-        </button>
-      </form>
-
-      {loading ? (
-        <div className="text-gray-400">Loading theaters...</div>
-      ) : theaters.length === 0 ? (
-        <div className="text-gray-400">No theaters found in this city.</div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {theaters.map((theater) => (
-            <div
-              key={theater.id}
-              className="bg-gray-800 rounded-lg p-4 shadow hover:scale-105 transform transition duration-300"
-            >
-              <h2 className="text-xl font-semibold mb-2">{theater.name}</h2>
-              <p className="text-gray-300">{theater.address}</p>
-              <button className="mt-4 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md font-semibold transition">
-                Book Now
-              </button>
-            </div>
-          ))}
+        {/* 🔽 City Dropdown */}
+        <div className="flex justify-center mb-8">
+          <select
+            value={city}
+            onChange={handleCityChange}
+            className="px-4 py-3 rounded-lg bg-black border-2 border-red-500 text-white text-lg focus:outline-none focus:ring-2 focus:ring-red-600"
+          >
+            <option value="">Select your city</option>
+            {cities.map((c, idx) => (
+              <option key={idx} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </div>
-      )}
+
+        {/* ⚠️ Error Message */}
+        {error && (
+          <p className="text-center text-red-400 font-medium mb-6">{error}</p>
+        )}
+
+        {/* 🎭 Theater List */}
+        {theaters.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {theaters.map((t, index) => (
+              <div
+                key={index}
+                className="bg-gray-900 p-5 rounded-xl shadow-lg hover:scale-105 transform transition duration-300 border border-red-700"
+              >
+                <h2 className="text-xl font-semibold text-red-400">{t.name}</h2>
+                <p className="text-gray-300 mt-2 text-sm">{t.address}</p>
+                <p className="text-gray-400 text-sm mt-1">
+                  🎟 Seats Available:{" "}
+                  <span className="font-bold text-green-400">{t.seatsAvailable}</span>
+                </p>
+                <button className="mt-4 bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition">
+                  Book Tickets
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ⏳ No theaters */}
+        {!loading && !error && theaters.length === 0 && city && (
+          <p className="text-center text-gray-400 mt-6">
+            No theaters found for <span className="text-red-400">{city}</span>
+          </p>
+        )}
+      </div>
     </div>
   );
 }

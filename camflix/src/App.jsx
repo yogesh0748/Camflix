@@ -5,8 +5,17 @@ import NowPlaying from "./components/NowPlaying";
 import MovieDetailsPage from "./pages/MovieDetailsPage";
 import MovieCarousel from "./components/MovieCarousel";
 import BookNowPage from "./pages/BookNowPage";
+import { uploadTheaterData } from "./uploadTheaterData";
+import { useEffect } from "react";
+import Currentcity from "./components/Currentcity";
 
 function App() {
+ 
+    useEffect(() => {
+      uploadTheaterData(); // run once to upload data
+      console.log("Theater data upload initiated.");
+    }, []);
+
   return (
     <Router>
       <Navbar />
@@ -15,6 +24,7 @@ function App() {
           path="/"
           element={
             <>
+              <Currentcity />
               <MovieCarousel />
               <NowPlaying />
             </>
